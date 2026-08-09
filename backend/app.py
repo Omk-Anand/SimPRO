@@ -18,7 +18,7 @@ CORS(app)
 # base_url (everything up to /v1); individual calls (e.g. client.responses.create)
 # append their own path, so we strip the trailing "/responses" if present.
 AZURE_AI_ENDPOINT = "https://avneh-4789-resource.services.ai.azure.com/openai/v1"
-AZURE_AI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5.5")
+AZURE_AI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
 
 client = OpenAI(
     base_url=AZURE_AI_ENDPOINT,
