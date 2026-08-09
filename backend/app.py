@@ -14,7 +14,16 @@ app = Flask(__name__)
 # CORS(app, resources={r"/api/*": {"origins": "https://your-frontend.vercel.app"}})
 CORS(app)
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# Azure AI Foundry's OpenAI-compatible v1 API. The SDK is pointed at the
+# base_url (everything up to /v1); individual calls (e.g. client.responses.create)
+# append their own path, so we strip the trailing "/responses" if present.
+AZURE_AI_ENDPOINT = "https://avneh-4789-resource.services.ai.azure.com/openai/v1"
+AZURE_AI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+
+client = OpenAI(
+    base_url=AZURE_AI_ENDPOINT,
+    api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
+)
 
 # Where generated STL files are written so they can be served back to the browser.
 MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_models")
@@ -39,16 +48,14 @@ def generate_cad_from_prompt(prompt: str) -> str:
         "The final CAD model MUST be assigned to a global variable named 'result'."
     )
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Create CadQuery code for: {prompt}"}
-        ],
+    response = client.responses.create(
+        model=AZURE_AI_DEPLOYMENT,
+        instructions=system_prompt,
+        input=f"Create CadQuery code for: {prompt}",
         temperature=0.2
     )
 
-    raw_code = response.choices[0].message.content
+    raw_code = response.output_text
     if "```python" in raw_code:
         raw_code = raw_code.split("```python")[1].split("```")[0].strip()
     elif "```" in raw_code:
@@ -161,6 +168,7 @@ def prompt_to_simulation():
         }), 200
 
     except Exception as e:
+        app.logger.exception("Simulation failed")
         return jsonify({
             "success": False,
             "iterationLogs": logs + [f"Error: {str(e)}"],
