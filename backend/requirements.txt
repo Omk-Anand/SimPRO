@@ -1,4 +1,5 @@
 Flask>=3.0.0
+flask-cors>=4.0.0
 gunicorn>=22.0.0
 cadquery>=2.3
 scikit-fem>=9.0.0
