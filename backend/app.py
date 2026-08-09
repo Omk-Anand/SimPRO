@@ -14,15 +14,15 @@ app = Flask(__name__)
 # CORS(app, resources={r"/api/*": {"origins": "https://your-frontend.vercel.app"}})
 CORS(app)
 
-# Azure AI Foundry's OpenAI-compatible v1 API. The SDK is pointed at the
-# base_url (everything up to /v1); individual calls (e.g. client.responses.create)
-# append their own path, so we strip the trailing "/responses" if present.
-AZURE_AI_ENDPOINT = "https://avneh-4789-resource.services.ai.azure.com/openai/v1"
-AZURE_AI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-5-nano")
+# Qwen (Alibaba DashScope) OpenAI-compatible endpoint.
+# Get a free API key at https://bailian.console.alibabacloud.com (international)
+# and set it as the QWEN_API_KEY env var on Render.
+QWEN_ENDPOINT = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen-plus")
 
 client = OpenAI(
-    base_url=AZURE_AI_ENDPOINT,
-    api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
+    base_url=QWEN_ENDPOINT,
+    api_key=os.environ.get("QWEN_API_KEY"),
 )
 
 # Where generated STL files are written so they can be served back to the browser.
@@ -48,14 +48,16 @@ def generate_cad_from_prompt(prompt: str) -> str:
         "The final CAD model MUST be assigned to a global variable named 'result'."
     )
 
-    response = client.responses.create(
-        model=AZURE_AI_DEPLOYMENT,
-        instructions=system_prompt,
-        input=f"Create CadQuery code for: {prompt}",
+    response = client.chat.completions.create(
+        model=QWEN_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Create CadQuery code for: {prompt}"}
+        ],
         temperature=0.2
     )
 
-    raw_code = response.output_text
+    raw_code = response.choices[0].message.content
     if "```python" in raw_code:
         raw_code = raw_code.split("```python")[1].split("```")[0].strip()
     elif "```" in raw_code:
@@ -179,3 +181,4 @@ def prompt_to_simulation():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+    
