@@ -1,22 +1,22 @@
 import React, { useState } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Stage, useSTLLoader } from '@react-three/drei';
+import { Canvas, useLoader } from '@react-three/fiber';
+import { OrbitControls, Stage } from '@react-three/drei';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { Play, RotateCcw, AlertCircle, CheckCircle, Cpu } from 'lucide-react';
 import axios from 'axios';
 
 // 3D Model Renderer utilizing react-three-fiber
+// 3D Model Renderer utilizing standard Three.js STLLoader
 function ModelViewer({ stlUrl }) {
   if (!stlUrl) return null;
-  const geometry = useSTLLoader(stlUrl);
+  const geometry = useLoader(STLLoader, stlUrl);
   
   return (
     <mesh geometry={geometry}>
-      {/* Standard engineering material presentation */}
       <meshStandardMaterial color="#64748b" roughness={0.4} metalness={0.2} />
     </mesh>
   );
 }
-
 export default function Dashboard() {
   const [prompt, setPrompt] = useState('Design a lightweight drone arm bracket');
   const [loadForce, setLoadForce] = useState(100);
