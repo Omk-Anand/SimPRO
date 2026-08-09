@@ -1,5 +1,5 @@
-Flask==3.0.3
-cadquery==2.4.0
-scikit-fem==9.0.1
-numpy==1.26.4
-gunicorn==22.0.0
+Flask>=3.0.0
+cadquery>=2.3
+scikit-fem>=9.0.0
+numpy<2.0.0
+gunicorn>=22.0.0
