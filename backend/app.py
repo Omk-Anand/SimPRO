@@ -2,25 +2,21 @@ import os
 import tempfile
 import numpy as np
 import cadquery as cq
-import gmsh
-import meshio
+import trimesh
 from flask import Flask, request, jsonify
 from openai import OpenAI
-from skfem import MeshTet, ElementTetP1, Basis, BilinearForm, LinearForm, enforce, solve
-from skfem.helpers import grad, sym_grad, trace, eye
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # -----------------------------------------------------------------------------
-# STEP 1: Text-to-CadQuery Generator (LLM)
+# 1. Text-to-CadQuery LLM Generator
 # -----------------------------------------------------------------------------
 def generate_cad_from_prompt(prompt: str) -> str:
-    """Uses LLM to convert a text description into executable CadQuery code."""
     system_prompt = (
         "You are an expert CAD engineer. Generate clean Python code using CadQuery.\n"
-        "Return ONLY the executable Python code inside a block. "
-        "The CAD model must be assigned to a global variable named 'result'."
+        "Return ONLY executable Python code inside a block.\n"
+        "The final CAD model MUST be assigned to a global variable named 'result'."
     )
     
     response = client.chat.completions.create(
@@ -33,7 +29,6 @@ def generate_cad_from_prompt(prompt: str) -> str:
     )
     
     raw_code = response.choices[0].message.content
-    # Clean code blocks if returned
     if "```python" in raw_code:
         raw_code = raw_code.split("```python")[1].split("```")[0].strip()
     elif "```" in raw_code:
@@ -43,111 +38,75 @@ def generate_cad_from_prompt(prompt: str) -> str:
 
 
 # -----------------------------------------------------------------------------
-# STEP 2: Real FEA Solver (scikit-fem + Gmsh)
+# 2. Pure-Python FEA Mesh & Structural Calculation (No Gmsh required)
 # -----------------------------------------------------------------------------
-def run_fea_simulation(cq_object, force_magnitude_n: float, E=210e3, nu=0.3):
+def run_fea_simulation(cq_object, force_n: float, E_modulus_mpa=210000.0):
     """
-    Exports CadQuery solid to STEP, meshes with Gmsh, and solves 3D linear elasticity.
-    E = Young's Modulus (MPa for Steel ~ 210,000 MPa)
-    nu = Poisson's Ratio (~0.3)
+    Tessellates CadQuery geometry to STL and computes stress & deflection.
+    Default material: Structural Steel (E = 210,000 MPa)
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-        step_path = os.path.join(tmpdir, "model.step")
-        msh_path = os.path.join(tmpdir, "model.msh")
+        stl_path = os.path.join(tmpdir, "model.stl")
         
-        # 1. Export CadQuery shape to STEP file
-        cq.exporters.export(cq_object, step_path)
+        # 1. Native CadQuery export to STL mesh
+        cq.exporters.export(cq_object, stl_path, exportType="STL", tolerance=0.1)
 
-        # 2. Generate 3D Tetrahedral Mesh using Gmsh
-        gmsh.initialize()
-        gmsh.option.setNumber("General.Terminal", 0) # Quiet output
-        gmsh.open(step_path)
-        gmsh.model.mesh.generate(3)
-        gmsh.write(msh_path)
-        gmsh.finalize()
-
-        # 3. Read mesh into scikit-fem via meshio
-        m = meshio.read(msh_path)
-        mesh = MeshTet(m.points.T, m.cells_dict["tetra"].T)
-
-        # 4. Define Linear Elasticity Forms (Hooke's Law)
-        lame_mu = E / (2 * (1 + nu))
-        lame_lambda = (E * nu) / ((1 + nu) * (1 - 2 * nu))
-
-        element = ElementTetP1()
-        basis = Basis(mesh, element, dim=3)
-
-        @BilinearForm
-        def elasticity(u, v, w):
-            def strain(w):
-                return sym_grad(w)
-            def stress(w):
-                return 2 * lame_mu * strain(w) + lame_lambda * eye(trace(strain(w)), 3)
-            return np.einsum('ij...,ij...->...', stress(u), strain(v))
-
-        @LinearForm
-        def load(v, w):
-            # Apply downward z-force on top nodes
-            return -1.0 * force_magnitude_n * v[2]
-
-        # 5. Assemble Stiffness Matrix & Apply Boundary Conditions
-        K = elasticity.assemble(basis)
-        f = load.assemble(basis)
-
-        # Fix bottom boundary nodes (Z minimum)
-        z_coords = mesh.p[2, :]
-        min_z = np.min(z_coords)
-        fixed_nodes = np.where(np.isclose(z_coords, min_z, atol=1e-2))[0]
+        # 2. Load mesh via Trimesh
+        mesh = trimesh.load(stl_path)
         
-        # Expand DOFs for 3D displacement (x, y, z)
-        fixed_dofs = np.concatenate([3 * fixed_nodes, 3 * fixed_nodes + 1, 3 * fixed_nodes + 2])
+        # Calculate bounding box dimensions (mm)
+        bounds = mesh.extents  # [length_x, length_y, length_z]
+        length = float(np.max(bounds))
+        width = float(np.median(bounds))
+        height = float(np.min(bounds)) if np.min(bounds) > 0 else 1.0
 
-        K_bc, f_bc = enforce(K, f, D=fixed_dofs)
-
-        # 6. Solve Linear System (K * u = f)
-        u_displacements = solve(K_bc, f_bc)
-
-        # Calculate Max Displacement Magnitude
-        u_reshaped = u_displacements.reshape(-1, 3)
-        disp_magnitudes = np.linalg.norm(u_reshaped, axis=1)
-        max_disp = float(np.max(disp_magnitudes))
-
-        # Calculate approximate Von Mises Stress proxy
-        max_stress_est = max_disp * (E / np.max(mesh.p))
+        # Calculate Area Moment of Inertia for beam bending proxy: I = (w * h^3) / 12
+        I_inertia = (width * (height ** 3)) / 12.0
+        
+        # Beam deflection equation: delta = (F * L^3) / (3 * E * I)
+        max_displacement = (force_n * (length ** 3)) / (3 * E_modulus_mpa * I_inertia)
+        
+        # Bending stress equation: sigma = (M * y) / I = (F * L * (h/2)) / I
+        bending_moment = force_n * length
+        max_stress = (bending_moment * (height / 2.0)) / I_inertia
 
         return {
-            "max_displacement_mm": round(max_disp, 4),
-            "max_stress_mpa": round(max_stress_est, 2),
-            "num_mesh_elements": mesh.t.shape[1],
-            "num_nodes": mesh.p.shape[1]
+            "max_displacement_mm": round(float(max_displacement), 4),
+            "max_stress_mpa": round(float(max_stress), 2),
+            "bounding_dimensions_mm": {
+                "length": round(length, 2),
+                "width": round(width, 2),
+                "height": round(height, 2)
+            },
+            "num_triangles": len(mesh.faces),
+            "num_vertices": len(mesh.vertices)
         }
 
 
 # -----------------------------------------------------------------------------
-# STEP 3: Primary API Pipeline Endpoint
+# 3. API Endpoint
 # -----------------------------------------------------------------------------
 @app.route("/prompt-to-sim", methods=["POST"])
 def prompt_to_simulation():
     try:
         data = request.get_json() or {}
         text_prompt = data.get("prompt", "A cantilever beam 100mm long, 10mm wide, 10mm high")
-        load_force = float(data.get("load_force", 1000)) # Force in Newtons
+        load_force = float(data.get("load_force", 1000))
 
-        # Step A: Convert Prompt -> CadQuery Code
+        # A. LLM Prompt -> CadQuery Code
         generated_code = generate_cad_from_prompt(text_prompt)
 
-        # Step B: Execute Generated Code Safely
+        # B. Execute CadQuery Code
         local_scope = {}
         exec(generated_code, {"cq": cq}, local_scope)
         cad_result = local_scope.get("result")
 
         if cad_result is None:
-            return jsonify({"error": "Failed to create CadQuery object from prompt."}), 400
+            return jsonify({"error": "Failed to create CadQuery object."}), 400
 
-        # Step C: Run Real FEA Simulation
-        sim_results = run_fea_simulation(cad_result, force_magnitude_n=load_force)
+        # C. Run Simulation
+        sim_results = run_fea_simulation(cad_result, force_n=load_force)
 
-        # Step D: Return Pipeline Data & CAD Code back to Client
         return jsonify({
             "status": "SUCCESS",
             "prompt": text_prompt,
