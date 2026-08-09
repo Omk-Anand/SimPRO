@@ -14,15 +14,15 @@ app = Flask(__name__)
 # CORS(app, resources={r"/api/*": {"origins": "https://your-frontend.vercel.app"}})
 CORS(app)
 
-# Qwen (Alibaba DashScope) OpenAI-compatible endpoint.
-# Get a free API key at https://bailian.console.alibabacloud.com (international)
-# and set it as the QWEN_API_KEY env var on Render.
-QWEN_ENDPOINT = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen-plus")
+# Featherless.ai OpenAI-compatible endpoint (access to a large catalog of open models).
+# Get a key at https://featherless.ai and set it as the FEATHERLESS_API_KEY env var on Render.
+# Model ids follow "owner/model-name" format from their catalog.
+FEATHERLESS_ENDPOINT = "https://api.featherless.ai/v1"
+FEATHERLESS_MODEL = os.environ.get("FEATHERLESS_MODEL", "Qwen/Qwen2.5-Coder-32B-Instruct")
 
 client = OpenAI(
-    base_url=QWEN_ENDPOINT,
-    api_key=os.environ.get("QWEN_API_KEY"),
+    base_url=FEATHERLESS_ENDPOINT,
+    api_key=os.environ.get("FEATHERLESS_API_KEY"),
 )
 
 # Where generated STL files are written so they can be served back to the browser.
@@ -49,7 +49,7 @@ def generate_cad_from_prompt(prompt: str) -> str:
     )
 
     response = client.chat.completions.create(
-        model=QWEN_MODEL,
+        model=FEATHERLESS_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Create CadQuery code for: {prompt}"}
@@ -181,4 +181,3 @@ def prompt_to_simulation():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-    
