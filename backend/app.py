@@ -1,6 +1,23 @@
 import os
+import sys
 import uuid
+import ctypes
 import numpy as np
+
+# -----------------------------------------------------------------------------
+# Dynamic library loader for Render non-Docker builds
+# Pre-loads system .so files from .apt/ directory before gmsh imports
+# -----------------------------------------------------------------------------
+apt_lib_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".apt", "usr", "lib", "x86_64-linux-gnu")
+if os.path.exists(apt_lib_dir):
+    os.environ["LD_LIBRARY_PATH"] = f"{apt_lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"
+    for lib_file in os.listdir(apt_lib_dir):
+        if lib_file.endswith(".so") or ".so." in lib_file:
+            try:
+                ctypes.CDLL(os.path.join(apt_lib_dir, lib_file))
+            except Exception:
+                pass
+
 import cadquery as cq
 import gmsh
 from skfem import MeshTet, Basis, ElementVector, ElementTetP1, condense, solve
@@ -342,4 +359,5 @@ def prompt_to_simulation():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
