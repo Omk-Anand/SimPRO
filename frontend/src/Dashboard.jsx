@@ -34,7 +34,7 @@ export default function Dashboard() {
 
     try {
       // Points to your FastAPI service deployed on Render
-      const response = await axios.post('https://your-render-backend-url.onrender.com/api/simulate', {
+      const response = await axios.post('https://simpro-xilm.onrender.com/api/simulate', {
         prompt,
         load_force: Number(loadForce),
         material
