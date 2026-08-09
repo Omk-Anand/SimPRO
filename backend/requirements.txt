@@ -5,5 +5,6 @@ scikit-fem>=9.0.0
 numpy<2.0.0
 gmsh-sdk
 meshio>=5.3.0
+trimesh>=4.0.0
 openai>=1.0.0
 
