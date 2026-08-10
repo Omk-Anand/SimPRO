@@ -1,10 +1,11 @@
 FROM python:3.12-slim
 
-# Update package lists and install required headless graphics libraries safely
+# Install system dependencies required for graphics, OpenGL, and OpenMP (libgomp)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libglu1-mesa \
+    libgomp1 \
     libxft2 \
     libxcursor1 \
     libxinerama1 \
