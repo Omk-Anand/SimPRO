@@ -1,10 +1,9 @@
 FROM python:3.12-slim
 
-# gmsh, cadquery, and vtk (used for volumetric FEA/CAD generation) 
-# need these system libraries to run headlessly in a slim container.
+# Update package lists and install required headless graphics libraries safely
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
-    libgl1-mesa-glx \
+    libglib2.0-0 \
     libglu1-mesa \
     libxft2 \
     libxcursor1 \
