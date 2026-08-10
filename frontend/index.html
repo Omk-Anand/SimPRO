@@ -1,14 +1,208 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PulseSim AI Engine</title>
-    <!-- Simple CDN link for Tailwind CSS style utilities -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 3D CAD & FEA Studio</title>
     <script src="https://cdn.tailwindcss.com"></script>
-  </head>
-  <body class="bg-slate-950 m-0 p-0 overflow-hidden">
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans h-screen flex flex-col">
+
+    <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+        <h1 class="text-xl font-bold flex items-center gap-2">
+            <span class="text-blue-500">📦</span> AI 3D CAD & FEA Studio
+        </h1>
+        <p class="text-xs text-slate-400">Powered by Flask, CadQuery, & Featherless.ai</p>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <div class="w-1/3 bg-slate-950 border-r border-slate-800 p-6 overflow-y-auto flex flex-col gap-6">
+            <form id="simForm" class="flex flex-col gap-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Part Prompt</label>
+                    <textarea id="promptInput" rows="3" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none" required>A cantilever beam 100mm long, 10mm wide, 10mm high</textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Material</label>
+                        <select id="materialSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm outline-none">
+                            <option value="aluminum">Aluminum 6061</option>
+                            <option value="titanium">Titanium Ti-6Al-4V</option>
+                            <option value="pla">PLA (3D Printed)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Load Force (N)</label>
+                        <input type="number" id="loadInput" value="1000" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm outline-none" required>
+                    </div>
+                </div>
+
+                <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-lg transition flex items-center justify-center gap-2 mt-2">
+                    Generate & Simulate
+                </button>
+            </form>
+
+            <div id="metricsPanel" class="hidden bg-slate-900/50 border border-slate-800 rounded-lg p-4 flex flex-col gap-3">
+                <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300">Simulation Metrics</h3>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-slate-900 p-2.5 rounded border border-slate-800">
+                        <span class="text-slate-400 block">Max Stress</span>
+                        <span id="metricStress" class="text-base font-semibold text-blue-400">-</span>
+                    </div>
+                    <div class="bg-slate-900 p-2.5 rounded border border-slate-800">
+                        <span class="text-slate-400 block">Max Displacement</span>
+                        <span id="metricDisp" class="text-base font-semibold text-blue-400">-</span>
+                    </div>
+                    <div class="bg-slate-900 p-2.5 rounded border border-slate-800">
+                        <span class="text-slate-400 block">Peak Temp</span>
+                        <span id="metricTemp" class="text-base font-semibold text-amber-400">-</span>
+                    </div>
+                    <div class="bg-slate-900 p-2.5 rounded border border-slate-800">
+                        <span class="text-slate-400 block">Mesh Elements</span>
+                        <span id="metricMesh" class="text-base font-semibold text-emerald-400">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-400 overflow-y-auto max-h-48" id="logBox">
+                <div class="text-slate-200 font-bold mb-1">Execution Logs:</div>
+                <div id="logContent">&gt; Ready for input...</div>
+            </div>
+        </div>
+
+        <div class="flex-1 relative bg-slate-900" id="canvasContainer">
+            <div id="placeholderText" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 gap-2">
+                <p>Enter a prompt and click "Generate & Simulate" to view the 3D model.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+
+        let scene, camera, renderer, controls, currentMesh;
+        const container = document.getElementById('canvasContainer');
+
+        function initViewer() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 2000);
+            camera.position.set(150, 150, 150);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(10, 20, 15);
+            scene.add(dirLight);
+
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function loadSTL(url) {
+            if (currentMesh) scene.remove(currentMesh);
+            
+            const loader = new STLLoader();
+            loader.load(url, function (geometry) {
+                geometry.computeVertexNormals();
+                const material = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.4, metalness: 0.2 });
+                currentMesh = new THREE.Mesh(geometry, material);
+                
+                // Center the geometry
+                geometry.center();
+                scene.add(currentMesh);
+
+                document.getElementById('placeholderText').style.display = 'none';
+            }, undefined, function (error) {
+                console.error('Error loading STL:', error);
+            });
+        }
+
+        initViewer();
+
+        // Form Submission Handler
+        document.getElementById('simForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            const logContent = document.getElementById('logContent');
+            const metricsPanel = document.getElementById('metricsPanel');
+
+            btn.disabled = true;
+            btn.innerText = "Running Simulation...";
+            logContent.innerHTML = "> Sending request to backend...<br>";
+
+            // Change this to your live Render backend URL in production
+            const BACKEND_URL = 'http://localhost:5000/api/simulate';
+
+            try {
+                const response = await fetch(BACKEND_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: document.getElementById('promptInput').value,
+                        material: document.getElementById('materialSelect').value,
+                        load_force: parseFloat(document.getElementById('loadInput').value)
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.msg || 'Simulation failed.');
+
+                // Render Logs
+                logContent.innerHTML = data.iterationLogs.map(l => `> ${l}`).join('<br>');
+
+                // Render Metrics
+                document.getElementById('metricStress').innerText = `${data.structural.max_von_mises_stress_mpa} MPa`;
+                document.getElementById('metricDisp').innerText = `${data.structural.max_displacement_mm} mm`;
+                document.getElementById('metricTemp').innerText = `${data.thermal.max_temperature_c} °C`;
+                document.getElementById('metricMesh').innerText = `${data.mesh.num_tetrahedra} tets`;
+                metricsPanel.classList.remove('hidden');
+
+                // Load 3D Model into Viewer
+                if (data.modelFileUrl) {
+                    loadSTL(data.modelFileUrl);
+                }
+
+            } catch (err) {
+                logContent.innerHTML += `<span class="text-red-400">> Error: ${err.message}</span>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Generate & Simulate";
+            }
+        });
+    </script>
+</body>
 </html>
