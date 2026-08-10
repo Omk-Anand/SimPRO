@@ -28,7 +28,7 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
 
   // Change this to your deployed Render backend URL in production
-  const BACKEND_URL = 'http://localhost:5000/api/simulate';
+  const BACKEND_URL = 'https://simpro-1.onrender.com';
 
   const handleSimulate = async (e) => {
     e.preventDefault();
