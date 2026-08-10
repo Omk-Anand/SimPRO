@@ -1,9 +1,10 @@
 FROM python:3.12-slim
 
-# gmsh (used for volumetric FEA meshing) needs these system libraries to run
-# headlessly — they aren't present in a base Python image or Render's
-# default Python buildpack, which is why this Dockerfile exists.
+# gmsh, cadquery, and vtk (used for volumetric FEA/CAD generation) 
+# need these system libraries to run headlessly in a slim container.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libgl1-mesa-glx \
     libglu1-mesa \
     libxft2 \
     libxcursor1 \
@@ -24,4 +25,3 @@ COPY . .
 EXPOSE 5000
 
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "120", "app:app"]
-
